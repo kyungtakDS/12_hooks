@@ -80,8 +80,25 @@ phases/
 | 훅 | 이벤트 | 동작 |
 |---|---|---|
 | `bash-guard.sh` | `PreToolUse[Bash]` | `rm -rf`, `git push --force`, `git reset --hard`, `DROP TABLE` 감지 시 차단 |
+| `precommit-review.sh` | `PreToolUse[Bash]` | 커밋 직전 스테이징된 diff를 Claude가 리뷰하고, 심각한 문제가 있으면 차단 |
 | `tdd-guard.sh` | `PreToolUse[Edit\|Write]` | 테스트 파일이 없으면 구현 코드 작성 차단 |
 | npm 검증 | `Stop` | 응답 종료 시 `lint` → `build` → `test` 실행 (`package.json`이 있을 때만) |
+
+### 커밋 전 리뷰 (`precommit-review.sh`)
+
+Claude가 `git commit`을 실행하려 하면 `git diff --cached`를 `claude -p`에 넘겨 리뷰시키고,
+버그·보안 결함·데이터 손실 위험이 발견되면 커밋을 차단한다. 스타일이나 취향은 지적하지 않는다.
+
+설계상 주의한 점:
+
+- **명령 접두사로 판정하지 않는다.** `git add . && git commit -m x` 같은 복합 명령이
+  접두사 매칭을 그대로 빠져나가기 때문에, 페이로드 전체에서 `git commit`을 찾는다.
+- **재귀 방지** — 리뷰용 중첩 세션에는 `CLAUDE_PRECOMMIT_REVIEW=1`이 설정되어 훅이 즉시 통과한다.
+- **fail open** — `claude` 호출이 실패하거나 응답이 비면 커밋을 막지 않는다. 훅 오류로 작업이 멈추면 안 된다.
+- 스테이징된 변경이 없으면 `claude`를 호출하지 않는다.
+
+한계: **Claude가 도구로 실행하는 커밋만** 가로챈다. 사람이 터미널에서 직접 치는 `git commit`은
+git hook이 아니므로 관여하지 않는다. 또한 걸리는 지점은 커밋이지 `git push`가 아니다.
 
 ### tdd-guard 적용 범위
 
