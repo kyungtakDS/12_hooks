@@ -167,6 +167,40 @@ def test_build_messages_언어_설정이_반영된다():
     assert "English" in msgs[0]["content"]
 
 
+def _system(**kw):
+    base = dict(title="t", lang="한국어", truncated=False)
+    base.update(kw)
+    return pr.build_messages("D", **base)[0]["content"]
+
+
+def test_시스템_프롬프트가_추측을_금지한다():
+    """근거 없는 지적이 실제 리뷰에서 가장 큰 노이즈였다."""
+    assert "추측" in _system()
+
+
+def test_시스템_프롬프트에_심각도_기준이_있다():
+    """기준 없이 이모지만 주면 사소한 것도 🔴 로 붙는다."""
+    sys_prompt = _system()
+    for mark in ("🔴", "🟡", "🟢"):
+        assert mark in sys_prompt
+    assert "재현" in sys_prompt
+
+
+def test_시스템_프롬프트가_내용없는_표현을_금지목록으로_준다():
+    sys_prompt = _system()
+    for phrase in ("검토가 필요합니다", "고려해야 합니다"):
+        assert phrase in sys_prompt
+
+
+def test_시스템_프롬프트에_지적_개수_상한이_있다():
+    """개수 제한이 없으면 분량을 채우려고 억지 항목을 만든다."""
+    assert "최대 7개" in _system()
+
+
+def test_시스템_프롬프트가_추가된_줄만_보라고_지시한다():
+    assert "+" in _system() and "변경되지 않은" in _system()
+
+
 # ---------------------------------------------------------------------------
 # request_review
 # ---------------------------------------------------------------------------
