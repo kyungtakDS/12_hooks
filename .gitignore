@@ -10,3 +10,7 @@ phases/**/step*-output.json
 
 # claude code worktrees
 .claude/worktrees/
+
+# python
+__pycache__/
+.pytest_cache/
