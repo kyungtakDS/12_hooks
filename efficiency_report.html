@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>12_hooks — Claude Code 세션 효율 리포트</title>
+<title>D--01-python-work2-03-claude-10vibe-HarnesE-12-hooks — Claude Code 세션 효율 리포트</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root {
@@ -50,15 +50,15 @@
 </head>
 <body>
   <h1>Claude Code 세션 효율 리포트</h1>
-  <div class="sub">12_hooks · 활성 세션 7개 · 세션 디렉터리: <code>C:/Users/Kyungtak Kim/.claude/projects/D--01-python-work2-03-claude-10vibe-HarnesE-12-hooks</code></div>
+  <div class="sub">D--01-python-work2-03-claude-10vibe-HarnesE-12-hooks · 활성 세션 8개 · 세션 디렉터리: <code>C:/Users/Kyungtak Kim/.claude/projects/D--01-python-work2-03-claude-10vibe-HarnesE-12-hooks</code></div>
 
   <div class="grid kpis">
-    <div class="kpi"><div class="l">누적 비용</div><div class="v">$160.32</div><div class="s">세션당 평균 $22.90</div></div>
-    <div class="kpi"><div class="l">총 토큰 처리</div><div class="v">50M</div><div class="s">입력(캐시 포함) 기준</div></div>
-    <div class="kpi"><div class="l">캐시 적중률</div><div class="v good">97.5%</div><div class="s">cache_read ÷ 총 입력</div></div>
-    <div class="kpi"><div class="l">출력 토큰</div><div class="v">0.66M</div><div class="s">실제 assistant 산출</div></div>
-    <div class="kpi"><div class="l">도구 호출 수</div><div class="v">287</div><div class="s">세션당 평균 41회</div></div>
-    <div class="kpi"><div class="l">평균 종합 점수</div><div class="v">85.8</div><div class="s">100점 만점 (composite)</div></div>
+    <div class="kpi"><div class="l">누적 비용</div><div class="v">$191.57</div><div class="s">세션당 평균 $23.95</div></div>
+    <div class="kpi"><div class="l">총 토큰 처리</div><div class="v">56M</div><div class="s">입력(캐시 포함) 기준</div></div>
+    <div class="kpi"><div class="l">캐시 적중률</div><div class="v good">97.0%</div><div class="s">cache_read ÷ 총 입력</div></div>
+    <div class="kpi"><div class="l">출력 토큰</div><div class="v">0.78M</div><div class="s">실제 assistant 산출</div></div>
+    <div class="kpi"><div class="l">도구 호출 수</div><div class="v">320</div><div class="s">세션당 평균 40회</div></div>
+    <div class="kpi"><div class="l">평균 종합 점수</div><div class="v">86.4</div><div class="s">100점 만점 (composite)</div></div>
   </div>
 
   <h2>비용 구조 분석</h2>
@@ -89,26 +89,26 @@
         <tr>
           <td>산출 밀도</td>
           <td>출력 ÷ 입력. ~2%가 적정 구간. 낮으면 읽기만 많고 산출이 부족, 높으면 긴 독백.
-            <div class="bar"><div style="width:87.55714285714285%;"></div></div>
+            <div class="bar"><div style="width:86.8%;"></div></div>
           </td>
           <td class="num">20%</td>
-          <td class="num warn">87.6 / 100</td>
+          <td class="num warn">86.8 / 100</td>
         </tr>
         <tr>
           <td>중복 Read 비율</td>
           <td>같은 파일을 반복 Read 한 비중. Grep/Glob 으로 위치를 좁히지 않고 Read 를 남발하면 감점.
-            <div class="bar"><div style="width:65.52857142857142%;"></div></div>
+            <div class="bar"><div style="width:69.83749999999999%;"></div></div>
           </td>
           <td class="num">20%</td>
-          <td class="num warn">65.5 / 100</td>
+          <td class="num warn">69.8 / 100</td>
         </tr>
         <tr>
           <td>도구 사용 효율</td>
           <td>출력 1k 토큰당 도구 호출 수. 2–10 이 건강한 범위, 20 초과는 탐색 thrash 신호.
-            <div class="bar"><div style="width:75.95714285714284%;"></div></div>
+            <div class="bar"><div style="width:75.5%;"></div></div>
           </td>
           <td class="num">20%</td>
-          <td class="num good">76.0 / 100</td>
+          <td class="num good">75.5 / 100</td>
         </tr>
       </tbody>
     </table>
@@ -160,6 +160,28 @@
             <td><span class="grade g-b">B+</span></td>
         </tr>
 <tr>
+            <td class="mono">48bb8cd3</td>
+            <td class="num">$25.14</td>
+            <td class="num">28</td>
+            <td class="num">5.4M</td>
+            <td class="num">82.3k</td>
+            <td class="num">93.0%</td>
+            <td class="num">0</td>
+            <td class="num">92.4</td>
+            <td><span class="grade g-a">A+</span></td>
+        </tr>
+<tr>
+            <td class="mono">03ee89aa</td>
+            <td class="num">$11.13</td>
+            <td class="num">13</td>
+            <td class="num">1.7M</td>
+            <td class="num">55.4k</td>
+            <td class="num">90.5%</td>
+            <td class="num">0</td>
+            <td class="num">93.1</td>
+            <td><span class="grade g-a">A+</span></td>
+        </tr>
+<tr>
             <td class="mono">c0b0dfdb</td>
             <td class="num">$10.26</td>
             <td class="num">11</td>
@@ -191,17 +213,6 @@
             <td class="num">1</td>
             <td class="num">80.1</td>
             <td><span class="grade g-a">A-</span></td>
-        </tr>
-<tr>
-            <td class="mono">03ee89aa</td>
-            <td class="num">$5.02</td>
-            <td class="num">8</td>
-            <td class="num">0.8M</td>
-            <td class="num">19.0k</td>
-            <td class="num">89.4%</td>
-            <td class="num">0</td>
-            <td class="num">94.8</td>
-            <td><span class="grade g-a">A+</span></td>
         </tr></tbody>
     </table>
   </div>
@@ -209,12 +220,12 @@
   <h2>비용 절감 개선안 (예상 $ 기준)</h2>
   <div class="card">
     <div class="imp">
-      <div class="h"><div class="t">1. Opus → Sonnet 라우팅 (작업 난이도별)</div><div class="s">~$38 (~24%)</div></div>
+      <div class="h"><div class="t">1. Opus → Sonnet 라우팅 (작업 난이도별)</div><div class="s">~$46 (~24%)</div></div>
       <p>간단한 리팩터/리드/테스트 실행은 Sonnet으로 이관. <code>/fast</code> 토글 또는 <code>--model sonnet</code> 세션.</p>
       <p><b>Why:</b> Opus 가격 = Sonnet × 5. 30%만 다운그레이드해도 큰 폭 절감.</p>
     </div>
     <div class="imp">
-      <div class="h"><div class="t">2. 장시간 세션 <code>/compact</code> 적극 사용</div><div class="s">~$22</div></div>
+      <div class="h"><div class="t">2. 장시간 세션 <code>/compact</code> 적극 사용</div><div class="s">~$25</div></div>
       <p>상위 14개 세션이 비용의 대부분을 차지. 매 150-200 turn마다 /compact로 절반 이상 cache read 절감 가능.</p>
       <p><b>Why:</b> 세션 길어질수록 매 turn 누적 컨텍스트를 re-read 과금. 컴팩션이 요약으로 교체.</p>
     </div>
@@ -224,7 +235,7 @@
       <p><b>Why:</b> 이미지는 가장 비싼 페이로드. 불필요하게 오래 유지되면 cache_read 누적.</p>
     </div>
     <div class="imp">
-      <div class="h"><div class="t">4. Cache TTL 1h → 5m 전환</div><div class="s">~$6</div></div>
+      <div class="h"><div class="t">4. Cache TTL 1h → 5m 전환</div><div class="s">~$8</div></div>
       <p>짧은 세션엔 1h 프리미엄($30/M) 불필요. 5m($18.75/M)로 충분. <code>ANTHROPIC_CACHE_TTL=5m</code> env 설정.</p>
       <p><b>Why:</b> 1h 프리미엄은 30분+ 세션에서만 회수. 단기 세션엔 순수 낭비.</p>
     </div>
@@ -239,8 +250,8 @@
       <p><b>Why:</b> 재Read는 cache write + 이후 매 turn cache read로 이중 과금.</p>
     </div>
     <div class="imp" style="border-left-color:var(--good); background:#0f2a1a;">
-      <div class="h"><div class="t">예상 누적 절감 (단순 합산)</div><div class="s">~$67 / $160 (~42%)</div></div>
-      <p>항목 간 중복 고려 시 실제로는 <b>30–40%</b> 수준 기대. 세션당 평균 $22.90 → $13.31.</p>
+      <div class="h"><div class="t">예상 누적 절감 (단순 합산)</div><div class="s">~$79 / $192 (~41%)</div></div>
+      <p>항목 간 중복 고려 시 실제로는 <b>30–40%</b> 수준 기대. 세션당 평균 $23.95 → $14.04.</p>
     </div>
   </div>
 
@@ -269,14 +280,14 @@ new Chart(document.getElementById('costPie'), {
   data: {
     labels: ['캐시 쓰기 (1h+5m)', '캐시 읽기', '출력', '입력 (캐시 미스)'],
     datasets: [{
-      data: [37.36, 73.23, 49.72, 0.02],
+      data: [50.47, 82.13, 58.62, 0.35],
       backgroundColor: chartColors, borderWidth: 0,
     }]
   },
   options: {
     plugins: {
       legend: { position: 'right' },
-      tooltip: { callbacks: { label: (c) => c.label + ': $' + c.parsed.toFixed(2) + ' (' + (c.parsed/160.32270449999996*100).toFixed(1) + '%)' } }
+      tooltip: { callbacks: { label: (c) => c.label + ': $' + c.parsed.toFixed(2) + ' (' + (c.parsed/191.56911599999998*100).toFixed(1) + '%)' } }
     }
   }
 });
@@ -284,13 +295,13 @@ new Chart(document.getElementById('costPie'), {
 new Chart(document.getElementById('pareto'), {
   type: 'bar',
   data: {
-    labels: [1, 2, 3, 4, 5, 6, 7],
+    labels: [1, 2, 3, 4, 5, 6, 7, 8],
     datasets: [
       { type: 'bar', label: '세션별 비용 ($)',
-         data: [63.51, 40.14, 26.78, 10.26, 8.55, 6.07, 5.02],
+         data: [63.51, 40.14, 26.78, 25.14, 11.13, 10.26, 8.55, 6.07],
          backgroundColor: '#7ad1ff', yAxisID: 'y' },
       { type: 'line', label: '누적 %',
-         data: [39.6, 64.6, 81.4, 87.8, 93.1, 96.9, 100.0], borderColor: '#fbbf24', backgroundColor: 'transparent',
+         data: [33.2, 54.1, 68.1, 81.2, 87.0, 92.4, 96.8, 100.0], borderColor: '#fbbf24', backgroundColor: 'transparent',
          yAxisID: 'y1', tension: 0.2, pointRadius: 0 }
     ]
   },
@@ -308,7 +319,7 @@ new Chart(document.getElementById('gradeBar'), {
   data: {
     labels: ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D", "F"],
     datasets: [{
-      data: [4, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+      data: [5, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0],
       backgroundColor: ['#4ade80','#4ade80','#86efac','#60a5fa','#60a5fa','#93c5fd','#fbbf24','#fbbf24','#fcd34d','#fca5a5','#ef4444'],
     }]
   },
@@ -322,7 +333,7 @@ new Chart(document.getElementById('scatter'), {
   type: 'bubble',
   data: {
     datasets: [{
-      label: '세션', data: [{"x": 63.51, "y": 72.4, "r": 9.75}, {"x": 40.14, "y": 91.2, "r": 5.95}, {"x": 26.78, "y": 75.2, "r": 5.15}, {"x": 10.26, "y": 92.1, "r": 3.55}, {"x": 8.55, "y": 94.9, "r": 3.9}, {"x": 6.07, "y": 80.1, "r": 3.65}, {"x": 5.02, "y": 94.8, "r": 3.4}],
+      label: '세션', data: [{"x": 63.51, "y": 72.4, "r": 9.75}, {"x": 40.14, "y": 91.2, "r": 5.95}, {"x": 26.78, "y": 75.2, "r": 5.15}, {"x": 25.14, "y": 92.4, "r": 4.4}, {"x": 11.13, "y": 93.1, "r": 3.65}, {"x": 10.26, "y": 92.1, "r": 3.55}, {"x": 8.55, "y": 94.9, "r": 3.9}, {"x": 6.07, "y": 80.1, "r": 3.65}],
       backgroundColor: 'rgba(122,209,255,0.5)', borderColor: '#7ad1ff',
     }]
   },

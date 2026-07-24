@@ -13,6 +13,7 @@
 ## 개발 프로세스
 - CRITICAL: 새 기능 구현 시 반드시 테스트를 먼저 작성하고, 테스트가 통과하는 구현을 작성할 것 (TDD)
 - 커밋 메시지는 conventional commits 형식을 따를 것 (feat:, fix:, docs:, refactor:)
+- 컨텍스트가 200k 토큰을 초과하면 `/compact` 로 대화를 압축할 것 (긴 세션의 입력·캐시 재전송 비용 억제)
 
 ## 명령어
 npm run dev      # 개발 서버

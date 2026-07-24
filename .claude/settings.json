@@ -1,4 +1,7 @@
 {
+  "env": {
+    "ANTHROPIC_CACHE_TTL": "5m"
+  },
   "hooks": {
     "Stop": [
       {
