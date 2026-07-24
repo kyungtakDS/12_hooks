@@ -1,0 +1,61 @@
+name: PR Review (GPT)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # 코드를 다시 푸시하지 않고 리뷰만 재실행할 때 쓴다.
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 리뷰할 PR 번호
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# 같은 PR 에 연속으로 푸시하면 이전 리뷰는 취소한다 (중복 코멘트와 API 비용 방지).
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # 포크에서 온 PR 은 시크릿이 주입되지 않아 실행해도 반드시 실패한다 — 조용히 건너뛴다.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+
+    steps:
+      # v4 는 Node 20 타깃이라 러너가 deprecation 경고를 낸다.
+      - uses: actions/checkout@v5
+
+      - name: PR 번호 확정
+        id: pr
+        env:
+          NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: diff 수집
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr diff "${{ steps.pr.outputs.number }}" > pr.diff
+
+      - name: GPT 리뷰 생성
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          REVIEW_LANG: ${{ vars.REVIEW_LANG }}
+          # 제목은 환경변수로 넘긴다 — run 본문에 직접 넣으면 셸 인젝션이 된다.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: python3 scripts/pr_review.py --diff pr.diff --out review.md
+
+      - name: PR 에 코멘트
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 기존 리뷰 코멘트를 갱신해 PR 이 코멘트로 도배되지 않게 한다.
+          # --create-if-none 이 없는 구버전 gh 에서는 새 코멘트로 떨어진다.
+          gh pr comment "${{ steps.pr.outputs.number }}" --body-file review.md --edit-last --create-if-none \
+            || gh pr comment "${{ steps.pr.outputs.number }}" --body-file review.md
