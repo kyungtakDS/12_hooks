@@ -195,6 +195,16 @@ def test_시스템_프롬프트가_루브릭을_품는다():
     assert "Critical" in sys_prompt
 
 
+def test_루브릭이_오채점_사례를_막는다():
+    """실제 리뷰에서 '테스트 추가'(좋은 일)에 위험 점수를 준 적이 있다.
+
+    evidence 가 문제를 서술하지 않으면 0점이라는 규칙을 루브릭이 명시해야 한다.
+    """
+    rubric = pr.load_rubric()
+    assert "오채점" in rubric
+    assert "findings" in rubric
+
+
 def test_시스템_프롬프트가_내용없는_표현을_금지목록으로_준다():
     sys_prompt = _system()
     for phrase in ("검토가 필요합니다", "고려해야 합니다"):
