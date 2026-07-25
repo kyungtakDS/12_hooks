@@ -85,7 +85,11 @@ phases/
 | `bash-guard.sh` | `PreToolUse[Bash]` | `rm -rf`, `git push --force`, `git reset --hard`, `DROP TABLE` 감지 시 차단 |
 | `precommit-review.sh` | `PreToolUse[Bash]` | 커밋 직전 스테이징된 diff를 Claude가 리뷰하고, 심각한 문제가 있으면 차단 |
 | `tdd-guard.sh` | `PreToolUse[Edit\|Write]` | 테스트 파일이 없으면 구현 코드 작성 차단 |
-| npm 검증 | `Stop` | 응답 종료 시 `lint` → `build` → `test` 실행 (`package.json`이 있을 때만) |
+| `run-tests.sh` | `Stop` | 응답 종료 시 `pytest` 실행. 쓸 수 있는 인터프리터가 없으면 통과 |
+
+`run-tests.sh`는 `python3` → `python` → `py` 순으로 시도하되, **이름이 있는지가 아니라
+`pytest`가 실제로 도는지로 판정한다.** Windows의 `python`은 실행되지 않는 Store alias stub이라
+이름만 보면 오판한다. 절대경로를 쓰려면 `HARNESS_PYTHON` 환경변수에 넣는다.
 
 ### 커밋 전 리뷰 (`precommit-review.sh`)
 
