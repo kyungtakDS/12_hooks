@@ -6,6 +6,7 @@ pr_review.py 단위 테스트.
 import io
 import json
 import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -432,6 +433,50 @@ def test_select_comment_id_여러개면_가장_오래된_것():
         {"id": 9, "body": pr.MARKER + " 중복 리뷰"},
     ]
     assert pr.select_comment_id(comments, pr.MARKER) == 5
+
+
+def _proc(rc=0, out="", err=""):
+    return MagicMock(returncode=rc, stdout=out, stderr=err)
+
+
+def test_post_comment_기존_댓글이_없으면_새로_단다():
+    with patch.object(pr, "_gh", side_effect=[_proc(0, "[]"), _proc(0)]):
+        assert "새 댓글" in pr.post_comment("o/r", "1", "본문")
+
+
+def test_post_comment_기존_댓글이_있으면_갱신한다():
+    listed = _proc(0, json.dumps([{"id": 7, "body": pr.MARKER + " 이전"}]))
+    with patch.object(pr, "_gh", side_effect=[listed, _proc(0)]) as m:
+        out = pr.post_comment("o/r", "1", "본문")
+    assert "7" in out
+    # 두 번째 호출이 PATCH 여야 한다
+    assert "PATCH" in m.call_args_list[1][0][0]
+
+
+def test_post_comment_게시_실패는_ReviewError():
+    """댓글을 못 달았는데 workflow 가 초록으로 끝나면 fail-closed 정책 위반이다."""
+    with patch.object(pr, "_gh", side_effect=[_proc(0, "[]"), _proc(1, err="gh: 권한 없음")]):
+        with pytest.raises(pr.ReviewError) as ei:
+            pr.post_comment("o/r", "1", "본문")
+    assert "권한 없음" in str(ei.value)
+
+
+def test_post_comment_목록_조회_실패해도_새_댓글로_진행한다():
+    """조회가 막혔다고 리뷰 결과를 통째로 버리지는 않는다."""
+    with patch.object(pr, "_gh", side_effect=[_proc(1, err="rate limit"), _proc(0)]):
+        assert "새 댓글" in pr.post_comment("o/r", "1", "본문")
+
+
+def test_emit_게시_실패하면_False():
+    with patch.object(pr, "post_comment", side_effect=pr.ReviewError("실패")):
+        ok = pr._emit(str(Path(tempfile.gettempdir()) / "emit_test.md"), "본문", "o/r", "1")
+    assert ok is False
+
+
+def test_emit_repo가_없으면_파일만_쓰고_성공():
+    target = Path(tempfile.gettempdir()) / "emit_test2.md"
+    assert pr._emit(str(target), "본문", "", "") is True
+    assert target.read_text(encoding="utf-8") == "본문"
 
 
 # ---------------------------------------------------------------------------
