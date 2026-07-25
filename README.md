@@ -130,9 +130,36 @@ push 하려는 커밋 범위의 diff를 Claude가 리뷰하고, 심각한 문제
 | 문제 없음 | 통과 |
 | 브랜치 삭제 push | 검사 없이 통과 |
 | 올릴 변경 없음 | 검사 없이 통과 |
-| `claude` 없음 / 리뷰 실패 / 타임아웃(180초) | **통과** (fail open) |
+| `claude` 없음 / 리뷰 실패 / 타임아웃 | **통과** (fail open) — 단, 이유를 반드시 출력한다 |
+| diff가 상한 초과 | 뒷부분을 자르고 **잘렸다고 경고** 후 검사 |
 
 새 브랜치를 push할 때는 원격에 비교 대상이 없으므로 기본 브랜치와의 분기점을 기준으로 삼는다.
+
+### 설정 (환경변수)
+
+| 변수 | 기본값 | 뜻 |
+|---|---|---|
+| `PREPUSH_REVIEW_MODEL` | `claude-haiku-4-5-20251001` | 리뷰 모델 |
+| `PREPUSH_REVIEW_TIMEOUT` | `240` | 초 단위 타임아웃 |
+| `PREPUSH_REVIEW_MAX_CHARS` | `60000` | diff 상한 (바이트) |
+
+커밋 전 훅도 같은 방식으로 `PRECOMMIT_REVIEW_MODEL` · `PRECOMMIT_REVIEW_TIMEOUT` ·
+`PRECOMMIT_REVIEW_MAX_CHARS`(기본 150초)를 받는다.
+
+**왜 haiku가 기본값인가** — 같은 44KB diff로 실측한 결과다.
+
+| 모델 | 결과 |
+|---|---|
+| `claude-sonnet-5` | 180초 안에 못 끝냄 → 검사가 통째로 생략됨 |
+| `claude-haiku-4-5` | **78초에 완료.** 30KB diff 끝에 묻어둔 시크릿도 잡아냄 |
+
+push를 몇 분씩 붙잡아두는 리뷰는 결국 `--no-verify`로 꺼지게 된다.
+더 꼼꼼한 리뷰를 원하면 `PREPUSH_REVIEW_MODEL`을 바꾸고 타임아웃도 함께 올릴 것.
+
+### 프롬프트는 stdin으로 넘긴다
+
+인자로 넘기면 Windows 명령줄 한도(32,767자)에 걸려 `Argument list too long`(exit 126)으로 죽는다.
+diff가 클수록 확실히 걸리므로, **정작 검사가 가장 필요한 큰 변경에서 검사가 빠지는** 문제였다.
 
 ### 우회
 

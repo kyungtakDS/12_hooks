@@ -11,6 +11,14 @@
 
 INPUT=$(cat)
 
+# 기본값은 실측으로 정했다 (44KB diff 기준):
+#   claude-sonnet-5 → 180초 안에 못 끝냄, claude-haiku-4-5 → 78초에 완료.
+# settings.json 의 훅 타임아웃(180초)에 하드킬당하면 이유조차 못 남기므로,
+# 내부 타임아웃을 그보다 짧게 잡아 우리가 메시지를 찍고 끝낸다.
+REVIEW_MODEL="${PRECOMMIT_REVIEW_MODEL:-claude-haiku-4-5-20251001}"
+REVIEW_TIMEOUT="${PRECOMMIT_REVIEW_TIMEOUT:-150}"
+MAX_DIFF_CHARS="${PRECOMMIT_REVIEW_MAX_CHARS:-60000}"
+
 # 재귀 방지 — 리뷰용 중첩 세션이 이 훅을 다시 돌리면 무한히 겹친다.
 if [ -n "$CLAUDE_PRECOMMIT_REVIEW" ]; then
   exit 0
@@ -35,7 +43,13 @@ if [ -z "$DIFF" ]; then
 fi
 
 # diff 가 너무 크면 앞부분만 본다 (프롬프트 폭발 방지).
-DIFF=$(printf '%s' "$DIFF" | head -c 60000)
+# 잘렸으면 조용히 넘어가지 않고 알린다 — 일부만 검사하고 통과시키는 것이 가장 나쁘다.
+TRUNCATED=""
+if [ "$(printf '%s' "$DIFF" | wc -c)" -gt "$MAX_DIFF_CHARS" ]; then
+  DIFF=$(printf '%s' "$DIFF" | head -c "$MAX_DIFF_CHARS")
+  TRUNCATED="yes"
+  echo "PRE-COMMIT REVIEW: ⚠ diff 가 커서 뒷부분을 잘랐습니다. 잘린 범위는 검사되지 않습니다." >&2
+fi
 
 read -r -d '' PROMPT <<EOF
 커밋 직전 코드 리뷰다. 아래는 이번 커밋에 스테이징된 변경(diff)이다.
@@ -52,16 +66,40 @@ read -r -d '' PROMPT <<EOF
 - 심각한 문제가 하나라도 있으면 첫 줄에 BLOCK 만 쓰고,
   다음 줄부터 각 문제를 "파일:라인 — 한 줄 이유" 형식으로 쓴다.
 - 심각한 문제가 없으면 첫 줄에 PASS 만 쓰고 끝낸다.
+${TRUNCATED:+
+주의: diff 가 너무 커서 뒷부분이 잘렸다. 보이는 범위만 리뷰하라.}
 
 --- staged diff ---
 $DIFF
 EOF
 
+# 프롬프트는 반드시 stdin 으로 넘긴다.
+# 인자로 넘기면 Windows 명령줄 한도(32767자)에 걸려
+# "Argument list too long" (exit 126) 으로 죽는다. 큰 커밋일수록 확실히 걸린다.
+#
+# 진단은 stderr 로만 낸다 — stdout 은 Claude Code 가 파싱하는 결정 JSON 자리다.
+ERR_FILE=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/precommit-err.$$")
+
+if command -v timeout >/dev/null 2>&1; then
+  VERDICT=$(printf '%s' "$PROMPT" | CLAUDE_PRECOMMIT_REVIEW=1 \
+    timeout "$REVIEW_TIMEOUT" claude -p --model "$REVIEW_MODEL" 2>"$ERR_FILE")
+else
+  VERDICT=$(printf '%s' "$PROMPT" | CLAUDE_PRECOMMIT_REVIEW=1 \
+    claude -p --model "$REVIEW_MODEL" 2>"$ERR_FILE")
+fi
+RC=$?
+
 # 리뷰 실패는 커밋을 막지 않는다 (fail open) — 훅 오류로 작업이 멈추면 안 된다.
-VERDICT=$(CLAUDE_PRECOMMIT_REVIEW=1 claude -p --model claude-sonnet-5 "$PROMPT" 2>/dev/null)
-if [ -z "$VERDICT" ]; then
+# 다만 조용히 넘어가지는 않는다.
+if [ "$RC" -ne 0 ] || [ -z "$VERDICT" ]; then
+  echo "PRE-COMMIT REVIEW: ⚠ 리뷰를 완료하지 못해 검사를 건너뜁니다 (exit=$RC)." >&2
+  if [ -s "$ERR_FILE" ]; then
+    head -3 "$ERR_FILE" | sed 's/^/PRE-COMMIT REVIEW:   /' >&2
+  fi
+  rm -f "$ERR_FILE"
   exit 0
 fi
+rm -f "$ERR_FILE"
 
 if ! printf '%s' "$VERDICT" | head -1 | grep -q 'BLOCK'; then
   exit 0

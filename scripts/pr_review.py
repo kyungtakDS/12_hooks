@@ -400,18 +400,30 @@ def post_comment(repo: str, pr: str, body: str) -> str:
     finally:
         os.unlink(path)
 
+    # 댓글을 못 달았는데 workflow 가 초록으로 끝나면 fail-closed 정책이 무너진다.
+    # 리뷰 결과가 아무 데도 보이지 않는데 성공으로 보이는 것이 가장 나쁘다.
     if r.returncode != 0:
-        return f"댓글 게시 실패: {r.stderr.strip()[:300]}"
+        raise ReviewError(f"PR 댓글 게시 실패: {r.stderr.strip()[:300]}")
     return action
 
 
 # --- 진입점 ---
 
-def _emit(out_path: str, body: str, repo: str, pr: str) -> None:
-    """댓글 본문을 파일로 쓰고, repo/pr 이 있으면 PR 에도 올린다."""
+def _emit(out_path: str, body: str, repo: str, pr: str) -> bool:
+    """댓글 본문을 파일로 쓰고, repo/pr 이 있으면 PR 에도 올린다.
+
+    게시에 성공했는지(또는 게시할 필요가 없었는지) 돌려준다.
+    실패를 삼키면 리뷰 결과가 어디에도 남지 않은 채 workflow 가 성공으로 끝난다.
+    """
     Path(out_path).write_text(body, encoding="utf-8")
-    if repo and pr:
+    if not (repo and pr):
+        return True
+    try:
         print(post_comment(repo, pr, body))
+        return True
+    except ReviewError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return False
 
 
 def main():
@@ -437,7 +449,8 @@ def main():
     diff = filter_diff(raw)
     if not diff.strip():
         print("리뷰할 변경 없음 — API 를 호출하지 않았습니다.")
-        _emit(args.out, render_no_changes(), args.repo, args.pr)
+        if not _emit(args.out, render_no_changes(), args.repo, args.pr):
+            sys.exit(1)
         return
 
     diff, truncated = truncate_diff(diff)
@@ -465,7 +478,8 @@ def main():
     total = total_score(categories)
     label, _ = risk_band(total)
     print(f"Risk Score: {total}/100 ({label})")
-    _emit(args.out, body, args.repo, args.pr)
+    if not _emit(args.out, body, args.repo, args.pr):
+        sys.exit(1)
 
 
 if __name__ == "__main__":
