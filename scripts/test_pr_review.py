@@ -178,12 +178,31 @@ def test_시스템_프롬프트가_추측을_금지한다():
     assert "추측" in _system()
 
 
-def test_시스템_프롬프트에_심각도_기준이_있다():
-    """기준 없이 이모지만 주면 사소한 것도 🔴 로 붙는다."""
-    sys_prompt = _system()
-    for mark in ("🔴", "🟡", "🟢"):
-        assert mark in sys_prompt
-    assert "재현" in sys_prompt
+def test_루브릭에_등급_구간이_모두_있다():
+    """기준 없이 점수만 요구하면 항목 배점이 들쭉날쭉해진다."""
+    rubric = pr.load_rubric()
+    for label in ("Low", "Moderate", "High", "Very High", "Critical"):
+        assert label in rubric
+    # 다섯 항목의 만점이 표에 적혀 있어야 한다
+    for key, _, cap in pr.CATEGORIES:
+        assert key in rubric
+    assert sum(cap for _, _, cap in pr.CATEGORIES) == 100
+
+
+def test_시스템_프롬프트가_루브릭을_품는다():
+    sys_prompt = _system(rubric=pr.load_rubric())
+    assert "security" in sys_prompt
+    assert "Critical" in sys_prompt
+
+
+def test_루브릭이_오채점_사례를_막는다():
+    """실제 리뷰에서 '테스트 추가'(좋은 일)에 위험 점수를 준 적이 있다.
+
+    evidence 가 문제를 서술하지 않으면 0점이라는 규칙을 루브릭이 명시해야 한다.
+    """
+    rubric = pr.load_rubric()
+    assert "오채점" in rubric
+    assert "findings" in rubric
 
 
 def test_시스템_프롬프트가_내용없는_표현을_금지목록으로_준다():
@@ -199,6 +218,220 @@ def test_시스템_프롬프트에_지적_개수_상한이_있다():
 
 def test_시스템_프롬프트가_추가된_줄만_보라고_지시한다():
     assert "+" in _system() and "변경되지 않은" in _system()
+
+
+# ---------------------------------------------------------------------------
+# Risk Score — 루브릭 로딩 / 프롬프트
+# ---------------------------------------------------------------------------
+
+def test_load_rubric_루브릭_파일을_읽는다():
+    text = pr.load_rubric()
+    assert "security" in text
+    assert "Critical" in text
+
+
+def test_build_messages_루브릭을_시스템_프롬프트에_넣는다():
+    msgs = pr.build_messages("D", title="t", lang="한국어", truncated=False,
+                             rubric="## 루브릭 본문 표식")
+    assert "## 루브릭 본문 표식" in msgs[0]["content"]
+
+
+# ---------------------------------------------------------------------------
+# Risk Score — 응답 파싱
+# ---------------------------------------------------------------------------
+
+def _payload(**over):
+    cats = {
+        "security": {"score": 0, "evidence": "문제 없음"},
+        "scope": {"score": 2, "evidence": "README 일부 변경"},
+        "breaking": {"score": 0, "evidence": "없음"},
+        "tests": {"score": 5, "evidence": "신규 동작 테스트 부족"},
+        "ops": {"score": 0, "evidence": "없음"},
+    }
+    cats.update(over.pop("categories", {}))
+    data = {"categories": cats, "findings": [], "recommendations": [],
+            "positives": [], "verdict": "merge 가능"}
+    data.update(over)
+    return data
+
+
+def test_parse_review_순수_JSON():
+    data = pr.parse_review(json.dumps(_payload()))
+    assert data["categories"]["tests"]["score"] == 5
+
+
+def test_parse_review_코드펜스로_감싼_JSON():
+    """모델이 ```json 펜스를 붙이는 일이 흔하다."""
+    raw = "```json\n" + json.dumps(_payload()) + "\n```"
+    assert pr.parse_review(raw)["verdict"] == "merge 가능"
+
+
+def test_parse_review_앞뒤_설명이_붙어도_객체를_찾는다():
+    raw = "아래가 결과입니다.\n" + json.dumps(_payload()) + "\n이상입니다."
+    assert pr.parse_review(raw)["categories"]["scope"]["score"] == 2
+
+
+def test_parse_review_JSON_이_아니면_에러():
+    with pytest.raises(ValueError):
+        pr.parse_review("죄송합니다. 리뷰할 수 없습니다.")
+
+
+def test_parse_review_깨진_JSON_이면_에러():
+    with pytest.raises(ValueError):
+        pr.parse_review('{"categories": {"security": ')
+
+
+def test_parse_review_빈_응답이면_에러():
+    with pytest.raises(ValueError):
+        pr.parse_review("")
+
+
+# ---------------------------------------------------------------------------
+# Risk Score — 정규화
+# ---------------------------------------------------------------------------
+
+def test_normalize_모든_항목이_0점():
+    cats = {k: {"score": 0, "evidence": "문제 없음"} for k, _, _ in pr.CATEGORIES}
+    out = pr.normalize_categories({"categories": cats})
+    assert pr.total_score(out) == 0
+    assert all(v["score"] == 0 for v in out.values())
+
+
+def test_normalize_보안_문제가_있는_경우():
+    data = _payload(categories={"security": {"score": 30, "evidence": "AWS 키가 평문으로 커밋됨"}})
+    out = pr.normalize_categories(data)
+    assert out["security"]["score"] == 30
+    assert "AWS" in out["security"]["evidence"]
+    assert pr.total_score(out) == 37  # 30 + 2 + 0 + 5 + 0
+
+
+def test_normalize_만점을_넘으면_깎는다():
+    data = _payload(categories={"security": {"score": 999, "evidence": "시크릿 노출"}})
+    assert pr.normalize_categories(data)["security"]["score"] == 30
+
+
+def test_normalize_음수는_0으로():
+    data = _payload(categories={"scope": {"score": -5, "evidence": "x"}})
+    assert pr.normalize_categories(data)["scope"]["score"] == 0
+
+
+def test_normalize_근거가_없으면_0점():
+    """근거 없이 점수만 높게 주는 것을 막는다 (루브릭 원칙 1)."""
+    data = _payload(categories={"security": {"score": 25, "evidence": "   "}})
+    assert pr.normalize_categories(data)["security"]["score"] == 0
+
+
+def test_normalize_점수가_숫자가_아니면_0점():
+    data = _payload(categories={"ops": {"score": "높음", "evidence": "배포 영향"}})
+    assert pr.normalize_categories(data)["ops"]["score"] == 0
+
+
+def test_normalize_누락된_항목은_0점으로_채운다():
+    out = pr.normalize_categories({"categories": {"security": {"score": 3, "evidence": "사소"}}})
+    assert set(out) == {k for k, _, _ in pr.CATEGORIES}
+    assert out["ops"]["score"] == 0
+
+
+def test_normalize_categories_키가_아예_없어도_깨지지_않는다():
+    out = pr.normalize_categories({})
+    assert pr.total_score(out) == 0
+
+
+# ---------------------------------------------------------------------------
+# Risk Score — 등급 경계값
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("total,label", [
+    (0, "Low"), (20, "Low"),
+    (21, "Moderate"), (40, "Moderate"),
+    (41, "High"), (60, "High"),
+    (61, "Very High"), (80, "Very High"),
+    (81, "Critical"), (100, "Critical"),
+])
+def test_risk_band_경계값(total, label):
+    assert pr.risk_band(total)[0] == label
+
+
+def test_risk_band_등급마다_다른_표시():
+    marks = {pr.risk_band(t)[1] for t in (0, 30, 50, 70, 90)}
+    assert len(marks) == 5
+
+
+# ---------------------------------------------------------------------------
+# Risk Score — Markdown 렌더링
+# ---------------------------------------------------------------------------
+
+def test_render_markdown_표와_점수를_만든다():
+    data = _payload(findings=["a.py:1 — 문제"], recommendations=["고쳐라"],
+                    positives=["테스트 좋음"], verdict="수정 후 merge")
+    cats = pr.normalize_categories(data)
+    md = pr.render_markdown(cats, data, model="gpt-4o")
+
+    assert pr.MARKER in md
+    assert "## 🤖 GPT PR 리뷰" in md
+    assert "**Risk Score: 7 / 100" in md
+    assert "🟢 Low" in md
+    # 표 헤더와 다섯 항목이 모두 있어야 한다
+    assert "| 평가 항목 | 점수 | 만점 | 주요 근거 |" in md
+    for _, label, cap in pr.CATEGORIES:
+        assert f"| {label} |" in md
+        assert f"| {cap} |" in md
+    assert "| 보안 | 0 | 30 | 문제 없음 |" in md
+    assert "### 주요 검토 결과" in md
+    assert "a.py:1 — 문제" in md
+    assert "### 권장 처리" in md
+    assert "수정 후 merge" in md
+    assert "gpt-4o" in md
+
+
+def test_render_markdown_비어있는_목록도_표시된다():
+    data = _payload()
+    md = pr.render_markdown(pr.normalize_categories(data), data, model="m")
+    assert "### 주요 검토 결과" in md
+    assert "없음" in md
+
+
+def test_render_markdown_표의_파이프를_이스케이프한다():
+    """근거에 | 가 들어가면 표가 깨진다."""
+    data = _payload(categories={"ops": {"score": 1, "evidence": "a | b"}})
+    md = pr.render_markdown(pr.normalize_categories(data), data, model="m")
+    assert "a \\| b" in md
+
+
+def test_render_error_원인을_남긴다():
+    md = pr.render_error("OPENAI_API_KEY 없음", "Secrets 에 등록하세요")
+    assert pr.MARKER in md
+    assert "OPENAI_API_KEY 없음" in md
+    assert "Secrets 에 등록하세요" in md
+
+
+# ---------------------------------------------------------------------------
+# 기존 PR 댓글 업데이트
+# ---------------------------------------------------------------------------
+
+def test_select_comment_id_마커가_있는_댓글을_찾는다():
+    comments = [
+        {"id": 1, "body": "사람이 쓴 댓글"},
+        {"id": 2, "body": pr.MARKER + "\n이전 리뷰"},
+        {"id": 3, "body": "또 다른 댓글"},
+    ]
+    assert pr.select_comment_id(comments, pr.MARKER) == 2
+
+
+def test_select_comment_id_없으면_None():
+    assert pr.select_comment_id([{"id": 1, "body": "x"}], pr.MARKER) is None
+
+
+def test_select_comment_id_빈_목록():
+    assert pr.select_comment_id([], pr.MARKER) is None
+
+
+def test_select_comment_id_여러개면_가장_오래된_것():
+    comments = [
+        {"id": 5, "body": pr.MARKER + " 첫 리뷰"},
+        {"id": 9, "body": pr.MARKER + " 중복 리뷰"},
+    ]
+    assert pr.select_comment_id(comments, pr.MARKER) == 5
 
 
 # ---------------------------------------------------------------------------
@@ -236,8 +469,25 @@ def test_request_review_인증_헤더와_모델을_담아_보낸다():
 
 
 def test_request_review_응답이_비면_에러():
+    """ReviewError 로 올린다 — main 이 잡아서 PR 댓글에 원인을 남겨야 하기 때문이다."""
     fake = _fake_response({"choices": []})
     with patch.object(pr.request, "urlopen", return_value=fake):
-        with pytest.raises(SystemExit):
+        with pytest.raises(pr.ReviewError):
+            pr.request_review([{"role": "user", "content": "x"}],
+                              api_key="sk-test", model="gpt-4o")
+
+
+def test_request_review_HTTP_에러도_ReviewError():
+    err = pr.error.HTTPError("u", 401, "Unauthorized", {}, io.BytesIO(b'{"error":"bad key"}'))
+    with patch.object(pr.request, "urlopen", side_effect=err):
+        with pytest.raises(pr.ReviewError) as ei:
+            pr.request_review([{"role": "user", "content": "x"}],
+                              api_key="sk-bad", model="gpt-4o")
+    assert "401" in str(ei.value)
+
+
+def test_request_review_연결_실패도_ReviewError():
+    with patch.object(pr.request, "urlopen", side_effect=pr.error.URLError("timed out")):
+        with pytest.raises(pr.ReviewError):
             pr.request_review([{"role": "user", "content": "x"}],
                               api_key="sk-test", model="gpt-4o")

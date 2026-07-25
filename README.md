@@ -13,7 +13,7 @@
 | Step 실행기 | `scripts/execute.py` | step을 순차 실행, 실패 시 자가 교정, 자동 커밋 |
 | 슬래시 커맨드 | `.claude/commands/` | `/harness` (step 설계), `/review` (변경 리뷰) |
 | 가드 훅 | `scripts/hooks/` | 위험 명령 차단, 테스트 없는 구현 차단 |
-| GPT PR 리뷰 | `.github/workflows/pr-review.yml` | PR diff를 GPT API로 리뷰해 코멘트 |
+| GPT PR 리뷰 | `.github/workflows/pr-review.yml` | PR diff를 GPT API로 리뷰해 Risk Score와 함께 코멘트 |
 | 문서 템플릿 | `docs/` | PRD · ARCHITECTURE · ADR (플레이스홀더 상태) |
 
 ---
@@ -175,32 +175,139 @@ src/__tests__/<name>.test.ts
 
 ## GPT PR 리뷰
 
-PR이 열리거나 푸시되면 diff를 OpenAI Chat Completions API로 보내 리뷰 코멘트를 남긴다.
+PR이 열리거나 업데이트되면 diff를 OpenAI Chat Completions API로 보내
+**Risk Score(0~100)와 항목별 근거**를 PR Conversation에 Markdown 댓글로 남긴다.
 
-### 설정
+### 실행 조건
+
+| 항목 | 값 |
+|---|---|
+| 트리거 | `pull_request` — `opened` · `synchronize` · `reopened` |
+| 수동 실행 | `workflow_dispatch` (PR 번호 입력) |
+| 건너뛰는 경우 | 포크에서 온 PR (시크릿이 주입되지 않아 반드시 실패하므로) |
+| 동시 실행 | 같은 PR에 연속 푸시하면 이전 실행을 취소 |
+| 권한 | `contents: read`, `pull-requests: write` |
+
+### 필요한 GitHub Secret / Variable
 
 ```bash
-gh secret set OPENAI_API_KEY          # 필수
+gh secret set OPENAI_API_KEY          # 필수 — 없으면 workflow가 실패한다
 gh variable set OPENAI_MODEL -b "..." # 선택, 기본 gpt-4o
 gh variable set REVIEW_LANG -b "..."  # 선택, 기본 한국어
 ```
 
-### 동작
+`GITHUB_TOKEN`은 Actions가 자동으로 넣어주므로 따로 등록하지 않는다.
 
-- 트리거: `pull_request` (opened · synchronize · reopened) + `workflow_dispatch`(수동 재실행)
-- **코멘트를 새로 달지 않고 기존 것을 갱신**해 PR이 도배되지 않음
-- 같은 PR에 연속 푸시하면 이전 실행을 취소 (중복 리뷰·API 비용 방지)
-- 포크에서 온 PR은 시크릿이 주입되지 않아 조용히 건너뜀
+### Risk Score 계산 기준
+
+항목별로 점수를 매기고 **합계**를 총점으로 쓴다. 만점의 합은 100이다.
+기준 전문은 [`scripts/risk-rubric.md`](scripts/risk-rubric.md)에 있고, 프롬프트에 그대로 주입된다.
+
+| 평가 항목 | 만점 | 무엇을 보는가 |
+|---|---:|---|
+| 보안 | 30 | API 키·시크릿 노출, 명령/SQL 주입, 경로 조작, 권한·인증 우회, 안전하지 않은 역직렬화 |
+| 변경 범위 및 복잡도 | 20 | 과도한 변경, 한 커밋에 섞인 여러 책임, 복잡도 증가, 검토하기 어려운 대규모 변경 |
+| Breaking change | 20 | 기존 API·함수 시그니처·설정 키·파일 구조·CLI 사용법의 비호환 변경 |
+| 테스트 및 검증 | 15 | 테스트 누락, 깨질 가능성, 경계조건 미검증, 빈 테스트나 skip으로 우회 |
+| 마이그레이션 및 운영 영향 | 15 | 배포·데이터·설정·의존성 변경, 롤백 불가, 마이그레이션 누락 |
+
+점수와 근거가 어긋나지 않도록 도구가 다음을 강제한다:
+
+- **근거(`evidence`)가 비어 있으면 그 항목은 0점으로 내린다.** 근거 없이 높은 점수를 줄 수 없다.
+- 항목 점수가 만점을 넘거나 음수면 잘라낸다.
+- 점수가 숫자가 아니면 0점으로 본다.
+- 누락된 항목은 0점으로 채운다.
+- **총점과 등급은 모델이 아니라 도구가 계산한다.** 모델의 산수를 믿지 않는다.
+
+### 등급 구간
+
+| 총점 | 등급 |
+|---|---|
+| 0–20 | 🟢 Low |
+| 21–40 | 🟡 Moderate |
+| 41–60 | 🟠 High |
+| 61–80 | 🔴 Very High |
+| 81–100 | 🚨 Critical |
+
+### PR 댓글 예시
+
+```markdown
+## 🤖 GPT PR 리뷰
+
+**Risk Score: 12 / 100 — 🟢 Low**
+
+| 평가 항목 | 점수 | 만점 | 주요 근거 |
+|---|---:|---:|---|
+| 보안 | 0 | 30 | 문제 없음 |
+| 변경 범위 및 복잡도 | 2 | 20 | README와 workflow 일부 변경 |
+| Breaking change | 0 | 20 | 문제 없음 |
+| 테스트 및 검증 | 10 | 15 | 신규 동작 테스트 일부 부족 |
+| 마이그레이션 및 운영 영향 | 0 | 15 | 문제 없음 |
+
+### 주요 검토 결과
+
+**발견된 문제**
+- scripts/pr_review.py:120 — 응답이 배열이면 처리되지 않음
+
+**권장 수정 사항**
+- 파싱 결과가 dict인지 확인 후 사용
+
+**잘된 점**
+- 경계값 테스트가 충실함
+
+### 권장 처리
+
+- 수정 후 merge
+```
+
+### 댓글 중복 방지
+
+본문 첫 줄에 `<!-- gpt-pr-review -->` 마커를 심는다.
+재실행하면 **마커가 든 기존 댓글을 찾아 갱신**하고, 없을 때만 새로 단다.
+마커가 든 댓글이 여러 개면 가장 오래된 것을 갱신해 항상 같은 댓글로 모인다.
+
+### 실패 정책 — fail-closed
+
+PR 리뷰는 **조용히 통과시키지 않는다.** 아래 경우 PR 댓글과 Actions 로그에 원인을 남기고
+workflow를 실패 처리한다(job이 붉게 남는다).
+
+| 상황 | 동작 |
+|---|---|
+| `OPENAI_API_KEY` 없음 | 댓글에 등록 방법 안내 + 종료 코드 1 |
+| API 호출 실패 · HTTP 오류 · 타임아웃 | 댓글에 상태 코드와 응답 본문 + 종료 코드 1 |
+| 응답이 JSON이 아님 · 파싱 실패 | 댓글에 원본 응답 일부 첨부 + 종료 코드 1 |
+| 리뷰할 코드 변경 없음 | Risk 0으로 정상 종료 (API 미호출) |
+
+> 훅(`precommit-review.sh`, `.githooks/pre-push`)은 반대로 **fail-open**이다.
+> 로컬 작업을 훅 오류로 멈추게 하지 않으려는 의도적 차이다.
+
+### 기타 동작
+
 - lockfile · 이미지 · `*.min.js` 등을 제외하고 60,000자로 절단
 - 리뷰할 코드 변경이 없으면 **API를 호출하지 않음**
+- 프롬프트가 근거 없는 지적을 막는다 — "검토가 필요합니다" 류 표현은 금지 목록, 지적은 최대 7개
 
-프롬프트는 근거 없는 지적을 막도록 제약을 건다 — 재현 경로를 쓸 수 없으면 높은 심각도를 붙이지 못하고, "검토가 필요합니다" 류 표현은 금지 목록에 있으며, 지적은 최대 7개로 제한된다.
+### 로컬 테스트
 
-로컬에서도 그대로 돌릴 수 있다:
+API를 호출하지 않는 단위 테스트:
+
+```bash
+python3 -m pytest scripts/test_pr_review.py -q
+```
+
+실제 API로 리뷰만 생성 (댓글은 달지 않음):
 
 ```bash
 git diff main... > pr.diff
 OPENAI_API_KEY=sk-... python3 scripts/pr_review.py --diff pr.diff --out review.md
+cat review.md
+```
+
+PR에 댓글까지 남기려면 `--repo`와 `--pr`을 준다 (`gh` 로그인 필요):
+
+```bash
+OPENAI_API_KEY=sk-... python3 scripts/pr_review.py \
+  --diff pr.diff --out review.md --repo owner/repo --pr 123
 ```
 
 ---
@@ -219,7 +326,8 @@ OPENAI_API_KEY=sk-... python3 scripts/pr_review.py --diff pr.diff --out review.m
 ├── docs/                  # PRD · ARCHITECTURE · ADR (채워 넣을 것)
 ├── scripts/
 │   ├── execute.py         # step 실행기
-│   ├── pr_review.py       # GPT 리뷰 생성기
+│   ├── pr_review.py       # GPT 리뷰 생성기 + PR 댓글 게시
+│   ├── risk-rubric.md     # Risk Score 채점 기준 (프롬프트에 주입)
 │   ├── hooks/             # bash-guard, tdd-guard
 │   └── test_*.py          # 단위 테스트
 ├── CLAUDE.md              # 프로젝트 규칙 (채워 넣을 것)
