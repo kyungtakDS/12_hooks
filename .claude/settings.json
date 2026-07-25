@@ -30,6 +30,12 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/bash-guard.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/precommit-review.sh\"",
+            "timeout": 180,
+            "statusMessage": "커밋 전 코드 리뷰 실행 중..."
           }
         ]
       }
