@@ -49,6 +49,16 @@ python -m pytest scripts/ -q     # 테스트 — 유일한 검증 명령
 lint·build 단계는 **없다.** ruff·flake8·mypy·shellcheck 모두 설치되어 있지 않다.
 AC(Acceptance Criteria)에 lint나 build 명령을 넣지 마라. 실행되지 않는다.
 
+## 이 저장소에서 작업할 때 알아둘 것
+
+- **커밋과 push 는 자동 리뷰를 통과해야 한다.** `git commit` 은 `precommit-review.sh`(Claude Code 훅),
+  `git push` 는 `.githooks/pre-push`(git 훅)가 가로채 diff 를 리뷰한다. 각각 수십 초 걸리며,
+  심각한 문제가 발견되면 차단된다. 정상 동작이므로 훅을 끄지 마라.
+- **git 훅은 클론 후 1회 설정이 필요하다**: `git config core.hooksPath .githooks`.
+  하지 않으면 pre-push 리뷰가 조용히 동작하지 않는다.
+- 리뷰가 **틀린 근거로 차단**하면(예: 라이브러리 버전이 없다는 주장) 사실을 먼저 확인하라.
+  확인되면 `git push --no-verify` 로 넘기되, 왜 넘겼는지 근거를 남겨라.
+
 ## 환경 (Windows)
 
 PATH의 `python`/`python3`는 Windows Store alias stub이라 실행되지 않는다.
