@@ -1,0 +1,108 @@
+#!/bin/bash
+# pre-push — push 직전, 실제로 올라갈 커밋 범위를 Claude 가 리뷰한다.
+#
+# 커밋 전 리뷰 훅(scripts/hooks/precommit-review.sh)은 Claude Code 훅이라
+# Claude 가 도구로 실행한 커밋만 가로챈다. 이 훅은 git 이 직접 부르므로
+# 사람이 터미널에서 만든 커밋까지 전부 검사한다. 둘은 서로의 사각지대를 메운다.
+#
+# 우회하려면: git push --no-verify
+#
+# stdin 으로 "<local ref> <local sha> <remote ref> <remote sha>" 가 줄단위로 들어온다.
+# git 은 push 할 ref 마다 한 줄씩 준다.
+
+Z="0000000000000000000000000000000000000000"
+MAX_DIFF_CHARS=60000
+REVIEW_TIMEOUT=180
+
+# 재귀 방지 — 리뷰용 중첩 세션이 push 하면 이 훅이 다시 돈다.
+if [ -n "$CLAUDE_PREPUSH_REVIEW" ]; then
+  exit 0
+fi
+
+# claude 가 없으면 push 를 막지 않는다 (fail open). 훅 때문에 작업이 멈추면 안 된다.
+if ! command -v claude >/dev/null 2>&1; then
+  exit 0
+fi
+
+# 새 브랜치를 push 할 때는 비교 기준이 없다. 기본 브랜치와의 분기점을 쓴다.
+DEFAULT_REF=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+if [ -z "$DEFAULT_REF" ]; then
+  DEFAULT_REF="origin/main"
+fi
+EMPTY_TREE=$(git hash-object -t tree /dev/null)
+
+DIFF=""
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "$local_sha" ] && continue
+
+  # 브랜치 삭제 push — 검사할 코드가 없다.
+  [ "$local_sha" = "$Z" ] && continue
+
+  if [ "$remote_sha" != "$Z" ]; then
+    base="$remote_sha"
+  else
+    base=$(git merge-base "$local_sha" "$DEFAULT_REF" 2>/dev/null)
+    [ -z "$base" ] && base="$EMPTY_TREE"
+  fi
+
+  d=$(git diff "$base" "$local_sha" 2>/dev/null)
+  [ -n "$d" ] && DIFF="${DIFF}${d}"
+done
+
+# 올라갈 변경이 없으면 (이미 원격과 같음) 리뷰하지 않는다.
+if [ -z "$DIFF" ]; then
+  exit 0
+fi
+
+DIFF=$(printf '%s' "$DIFF" | head -c "$MAX_DIFF_CHARS")
+
+read -r -d '' PROMPT <<EOF
+push 직전 코드 리뷰다. 아래는 원격에 올라갈 변경(diff)이다.
+이 변경이 **새로 도입하는** 심각한 문제만 찾아라.
+
+찾을 것:
+- 버그 · 크래시 · 회귀
+- 보안 결함 (하드코딩된 시크릿/키, 주입, 인증·권한 우회)
+- 데이터 손실 위험
+
+무시할 것: 스타일, 네이밍, 취향, 사소한 개선, 기존 코드의 문제.
+
+출력 형식을 반드시 지켜라:
+- 심각한 문제가 하나라도 있으면 첫 줄에 BLOCK 만 쓰고,
+  다음 줄부터 각 문제를 "파일:라인 — 한 줄 이유" 형식으로 쓴다.
+- 심각한 문제가 없으면 첫 줄에 PASS 만 쓰고 끝낸다.
+
+--- diff ---
+$DIFF
+EOF
+
+echo "pre-push: Claude 코드 리뷰 실행 중..." >&2
+
+if command -v timeout >/dev/null 2>&1; then
+  VERDICT=$(CLAUDE_PREPUSH_REVIEW=1 timeout "$REVIEW_TIMEOUT" claude -p --model claude-sonnet-5 "$PROMPT" 2>/dev/null)
+else
+  VERDICT=$(CLAUDE_PREPUSH_REVIEW=1 claude -p --model claude-sonnet-5 "$PROMPT" 2>/dev/null)
+fi
+
+# 리뷰 실패·타임아웃은 push 를 막지 않는다 (fail open).
+if [ -z "$VERDICT" ]; then
+  echo "pre-push: 리뷰를 완료하지 못했습니다. 검사를 건너뜁니다." >&2
+  exit 0
+fi
+
+if ! printf '%s' "$VERDICT" | head -1 | grep -q 'BLOCK'; then
+  echo "pre-push: 리뷰 통과." >&2
+  exit 0
+fi
+
+echo "" >&2
+echo "======================================================" >&2
+echo " PUSH 차단 — 심각한 문제가 발견되었습니다" >&2
+echo "======================================================" >&2
+printf '%s\n' "$VERDICT" >&2
+echo "------------------------------------------------------" >&2
+echo " 수정 후 다시 push 하세요." >&2
+echo " 의도적으로 넘기려면: git push --no-verify" >&2
+echo "======================================================" >&2
+
+exit 1

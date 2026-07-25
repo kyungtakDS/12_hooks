@@ -21,6 +21,9 @@
 ## 빠른 시작
 
 ```bash
+# 0. git 훅 활성화 (클론 후 1회 — 하지 않으면 pre-push 리뷰가 동작하지 않는다)
+git config core.hooksPath .githooks
+
 # 1. 프로젝트 규칙을 채운다 (플레이스홀더가 들어있다)
 #    CLAUDE.md, docs/PRD.md, docs/ARCHITECTURE.md, docs/ADR.md
 
@@ -98,7 +101,57 @@ Claude가 `git commit`을 실행하려 하면 `git diff --cached`를 `claude -p`
 - 스테이징된 변경이 없으면 `claude`를 호출하지 않는다.
 
 한계: **Claude가 도구로 실행하는 커밋만** 가로챈다. 사람이 터미널에서 직접 치는 `git commit`은
-git hook이 아니므로 관여하지 않는다. 또한 걸리는 지점은 커밋이지 `git push`가 아니다.
+git hook이 아니므로 관여하지 않는다. 그 사각지대는 아래 `pre-push` 훅이 메운다.
+
+---
+
+## git pre-push 훅
+
+`.githooks/pre-push`는 **진짜 git 훅**이다. git이 직접 호출하므로 **누가 만든 커밋이든**,
+사람이 터미널에서 직접 만든 것까지 전부 검사한다.
+
+### 설치 (클론 후 1회)
+
+git은 `.git/hooks/`를 추적하지 않으므로, 추적되는 `.githooks/`를 쓰도록 한 번 지정해야 한다.
+
+```bash
+git config core.hooksPath .githooks
+```
+
+이 설정을 하지 않으면 훅은 그냥 동작하지 않는다 (조용히 건너뛴다).
+
+### 동작
+
+push 하려는 커밋 범위의 diff를 Claude가 리뷰하고, 심각한 문제가 있으면 push를 중단한다.
+
+| 상황 | 동작 |
+|---|---|
+| 시크릿·버그 발견 | **push 차단** (exit 1), 파일:라인과 이유 출력 |
+| 문제 없음 | 통과 |
+| 브랜치 삭제 push | 검사 없이 통과 |
+| 올릴 변경 없음 | 검사 없이 통과 |
+| `claude` 없음 / 리뷰 실패 / 타임아웃(180초) | **통과** (fail open) |
+
+새 브랜치를 push할 때는 원격에 비교 대상이 없으므로 기본 브랜치와의 분기점을 기준으로 삼는다.
+
+### 우회
+
+```bash
+git push --no-verify
+```
+
+### 두 리뷰 훅의 차이
+
+| | `precommit-review.sh` | `.githooks/pre-push` |
+|---|---|---|
+| 종류 | Claude Code 훅 | git 훅 |
+| 시점 | 커밋 직전 | push 직전 |
+| 검사 대상 | **Claude가 실행한** 커밋만 | **모든** 커밋 (사람이 만든 것 포함) |
+| 범위 | 스테이징된 diff | push할 커밋 범위 전체 |
+| 우회 | — | `--no-verify` |
+
+중복이 아니라 서로의 사각지대를 메운다. 커밋 훅은 문제를 일찍 잡고,
+push 훅은 사람이 만든 커밋까지 포함해 원격에 나가기 전 마지막으로 거른다.
 
 ### tdd-guard 적용 범위
 
@@ -159,6 +212,8 @@ OPENAI_API_KEY=sk-... python3 scripts/pr_review.py --diff pr.diff --out review.m
 ├── .claude/
 │   ├── commands/          # /harness, /review 슬래시 커맨드
 │   └── settings.json      # 훅 등록
+├── .githooks/
+│   └── pre-push           # git 훅 — push 전 Claude 리뷰 (core.hooksPath 필요)
 ├── .github/workflows/
 │   └── pr-review.yml      # GPT PR 리뷰
 ├── docs/                  # PRD · ARCHITECTURE · ADR (채워 넣을 것)
